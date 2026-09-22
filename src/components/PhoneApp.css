@@ -1,0 +1,260 @@
+.phone {
+  width: 300px;
+  height: 610px;
+  background: #0b0b0d;
+  border-radius: 48px;
+  padding: 14px;
+  box-shadow:
+    0 30px 60px -20px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(0, 0, 0, 0.08);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.phone__notch {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 26px;
+  background: #0b0b0d;
+  border-radius: 0 0 16px 16px;
+  z-index: 2;
+}
+
+.phone__statusbar {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 22px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d1d1f;
+}
+
+.phone__screen {
+  background: #f5f5f7;
+  height: calc(100% - 24px);
+  margin-top: 4px;
+  border-radius: 36px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 20px 28px;
+}
+
+.phone__app-header {
+  margin-bottom: 20px;
+}
+
+.phone__app-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1d1d1f;
+  letter-spacing: -0.02em;
+}
+
+.phone__app-subtitle {
+  font-size: 13px;
+  color: #6e6e73;
+  margin-top: 2px;
+}
+
+.phone__panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.phone__panel--center {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+}
+
+.phone__pin {
+  font-size: 40px;
+  margin-bottom: 8px;
+}
+
+.phone__reroute {
+  background: #fff3e0;
+  color: #b45300;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 10px 12px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  animation: phone-reroute-in 0.3s ease;
+  line-height: 1.35;
+}
+
+@keyframes phone-reroute-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.phone__pin--pulse {
+  animation: phone-pulse 0.9s ease-in-out infinite;
+}
+
+.phone__hint--pulse {
+  color: #ff3b30;
+  letter-spacing: 0.04em;
+  animation: phone-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes phone-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.7;
+  }
+}
+
+.phone__spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid #d2d2d7;
+  border-top-color: #007aff;
+  margin-bottom: 14px;
+  animation: phone-spin 0.8s linear infinite;
+}
+
+@keyframes phone-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.phone__check {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #34c759;
+  color: white;
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.phone__hint {
+  font-size: 14.5px;
+  color: #6e6e73;
+  line-height: 1.4;
+  max-width: 220px;
+}
+
+.phone__hint--strong {
+  font-size: 19px;
+  font-weight: 700;
+  color: #1d1d1f;
+}
+
+.phone__button {
+  margin-top: 18px;
+  background: #007aff;
+  color: white;
+  border: none;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 14px 22px;
+  border-radius: 14px;
+  width: 100%;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.phone__button:hover:not(:disabled) {
+  background: #0068d6;
+}
+
+.phone__button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.phone__button:disabled {
+  background: #c7c7cc;
+  cursor: not-allowed;
+}
+
+.phone__button--ghost {
+  background: transparent;
+  color: #ff3b30;
+  margin-top: auto;
+}
+
+.phone__button--ghost:hover {
+  background: rgba(255, 59, 48, 0.08);
+}
+
+.phone__target {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px;
+  background: #ffffff;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.phone__target-label {
+  font-size: 12px;
+  color: #6e6e73;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.phone__target-spot {
+  font-size: 26px;
+  font-weight: 700;
+  color: #007aff;
+  letter-spacing: -0.02em;
+}
+
+.phone__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.phone__step {
+  font-size: 14px;
+  color: #b8b8bd;
+  background: transparent;
+  padding: 10px 14px;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.phone__step--active {
+  color: #1d1d1f;
+  background: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.phone__step--done {
+  color: #b8b8bd;
+  text-decoration: line-through;
+}
