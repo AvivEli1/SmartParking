@@ -39,7 +39,7 @@ export function buildDirections(path: GridPoint[], spotId: string): DirectionSte
   );
   let segmentLength = 1;
 
-  const flushStraight = (endIndex: number) => {
+  const flushStraight = () => {
     if (segmentLength > 0) {
       const spaces = segmentLength === 1 ? 'space' : 'spaces';
       steps.push({
@@ -55,7 +55,7 @@ export function buildDirections(path: GridPoint[], spotId: string): DirectionSte
       segmentLength++;
       continue;
     }
-    flushStraight(i);
+    flushStraight();
     const turn = turnLabel(segmentDir, dir);
     steps.push({
       text: turn === 'straight' ? 'Continue straight' : `Turn ${turn}`,
@@ -65,7 +65,7 @@ export function buildDirections(path: GridPoint[], spotId: string): DirectionSte
     segmentStart = i;
     segmentLength = 1;
   }
-  flushStraight(path.length - 1);
+  flushStraight();
 
   steps.push({
     text: `Arrived — park at Spot ${spotId}`,
