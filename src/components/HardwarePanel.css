@@ -231,3 +231,13 @@
 .hw__note--tight {
   margin-top: -8px;
 }
+
+.hw__rearm {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #8a5300;
+  background: #fff3e0;
+  padding: 8px 10px;
+  border-radius: 10px;
+}

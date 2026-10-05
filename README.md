@@ -89,10 +89,16 @@ in the sketch.
 
 All the other spots stay simulated, so you get a full lot with one real spot.
 
-**Choosing which spot is the real one.** The blue **HW** tag on the lot marks the hardware spot.
-It starts on S25 (closest to the entrance). To test somewhere else, **drag the HW tag onto any
+**The real spot moves on by itself.** The blue **HW** tag on the lot marks the hardware spot. It
+starts on S25. When a car parks there and the spot sensor confirms it, that car stays parked at S25
+and the tag **moves to the next nearest free spot** (S26, then S27, ...). The tag turns outlined and
+the Hardware panel says to move the real sensor and clear it: the new spot starts following the
+sensor again once it reads "open", so a car still sitting at the sensor can't instantly fill the
+next spot. In the meantime the waiting spot is reserved and no cars are routed to it.
+
+**Choosing the spot yourself.** To test somewhere else, **drag the HW tag onto any
 other spot** (you can do this before connecting the board too). The Hardware panel and the
-sensor feed follow it. Moving it is only possible between trips, not while a car is navigating.
+sensor feed follow it. Moving it by hand is only possible between trips, not while a car is navigating, and the old spot goes back to a normal free spot.
 The "Send cars to Spot X" checkbox in the Hardware panel is test mode: while it's on, new cars
 head for the real spot whenever it's free, so you exercise the sensor even when that spot is
 far from the entrance. Turn it off to see normal nearest-spot routing.
@@ -111,7 +117,8 @@ deployed (https) site, since the browser talks to the board directly. There's no
    searches, then gives directions to the real spot and the virtual car drives up to it.
 2. The virtual car stops at the spot and waits ("Pull into Spot ..."). Move the toy car to the
    **spot sensor**: the app sees the spot become TAKEN and confirms you've parked.
-3. Bring a second car to the entrance while the real spot is taken: it's routed to the next nearest spot.
+3. The tag moves on to the next nearest spot. Clear the spot sensor, then bring a second car to the
+   entrance: it's sent to the new real spot.
 
 The Hardware panel shows both live distances with their trigger points. If your sensors
 trigger too early or too late, drag the **trigger** sliders. No re-flashing needed (default 15 cm).

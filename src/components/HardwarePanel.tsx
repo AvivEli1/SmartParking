@@ -6,6 +6,7 @@ const MAX_CM = 80;
 interface HardwarePanelProps {
   hw: Hardware;
   spotId: string;
+  waitingToRearm: boolean;
   preferRealSpot: boolean;
   onPreferRealSpot: (value: boolean) => void;
 }
@@ -48,7 +49,7 @@ function SensorRow({
   );
 }
 
-export default function HardwarePanel({ hw, spotId, preferRealSpot, onPreferRealSpot }: HardwarePanelProps) {
+export default function HardwarePanel({ hw, spotId, waitingToRearm, preferRealSpot, onPreferRealSpot }: HardwarePanelProps) {
   const { serial, emulator } = hw;
   const connected = serial.status === 'connected';
   const busy = serial.status === 'connecting';
@@ -82,6 +83,11 @@ export default function HardwarePanel({ hw, spotId, preferRealSpot, onPreferReal
 
         {hw.active && (
           <>
+            {waitingToRearm && (
+              <p className="hw__rearm">
+                📡 Move the real sensor to <strong>Spot {spotId}</strong> and clear it. Waiting for the sensor to read open.
+              </p>
+            )}
             <SensorRow
               label="Entrance"
               pin="D34"

@@ -9,7 +9,7 @@ import { useHardware } from './hardware/useHardware';
 import { generateLot } from './lot/generateLot';
 import { findNearestFreeSpot, buildRouteToSpot, type RouteResult } from './lot/pathfinding';
 import { buildDirections } from './lot/directions';
-import type { GridPoint, Spot } from './lot/types';
+import type { GridPoint, LotModel, Spot } from './lot/types';
 
 const MS_PER_CELL = 900;
 const AMBIENT_MS_PER_CELL = 550;
@@ -17,6 +17,8 @@ const DETECT_MS = 1000;
 const SEARCH_MS = 1000;
 const PING_MS = 700;
 const AMBIENT_SPAWN_MS = 3200;
+// After a car parks in the real spot, wait a beat before moving the real sensor to the next spot.
+const HARDWARE_ADVANCE_DELAY_MS = 900;
 const MAX_AMBIENT_CARS = 3;
 const REROUTE_STEAL_CHANCE = 0.55;
 // The spot driven by the real D35 sensor. Starts at S25 (closest to the entrance); drag the HW tag to move it.
@@ -75,10 +77,15 @@ function App() {
   const hw = useHardware();
   const [hardwareSpotId, setHardwareSpotId] = useState(DEFAULT_HARDWARE_SPOT_ID);
   const [preferRealSpot, setPreferRealSpot] = useState(true);
+  // False while the real sensor is waiting to be moved/cleared after a car parked in its spot.
+  const [hwArmed, setHwArmed] = useState(true);
+  const hwControls = hw.active && hwArmed;
 
   const hwActiveRef = useRef(hw.active);
   const hardwareSpotIdRef = useRef(hardwareSpotId);
   const preferRealSpotRef = useRef(preferRealSpot);
+  const hwArmedRef = useRef(hwArmed);
+  const hwControlsRef = useRef(hwControls);
   const hwSpotOccupiedRef = useRef(hw.spotOccupied);
   const lotRef = useRef(lot);
   const userStatusRef = useRef(userStatus);
@@ -111,7 +118,9 @@ function App() {
     hwSpotOccupiedRef.current = hw.spotOccupied;
     hardwareSpotIdRef.current = hardwareSpotId;
     preferRealSpotRef.current = preferRealSpot;
-  }, [hw.active, hw.spotOccupied, hardwareSpotId, preferRealSpot]);
+    hwArmedRef.current = hwArmed;
+    hwControlsRef.current = hwControls;
+  }, [hw.active, hw.spotOccupied, hardwareSpotId, preferRealSpot, hwArmed, hwControls]);
 
   const nextId = (prefix: string) => `${prefix}${idCounter.current++}`;
 
@@ -150,6 +159,7 @@ function App() {
     if (!interactive || id === hardwareSpotId) return;
     const previous = hardwareSpotId;
     setHardwareSpotId(id);
+    setHwArmed(true);
     if (hw.active) {
       // The real car now sits at the new spot, so the old one goes back to being a free simulated spot.
       setLot((prev) => ({
@@ -184,7 +194,7 @@ function App() {
 
   // Hardware: the real D35 sensor decides whether the hardware spot is taken.
   useEffect(() => {
-    if (!hw.active) return;
+    if (!hwControls) return;
     const spot = lotRef.current.spots.find((s) => s.id === hardwareSpotId);
     if (!spot || spot.occupied === hw.spotOccupied) return;
     setLot((prev) => ({
@@ -194,7 +204,39 @@ function App() {
     addPing(spot.row, spot.col);
     logActivity(`📡 Spot sensor D35 → Spot ${hardwareSpotId} ${hw.spotOccupied ? 'OCCUPIED' : 'FREE'}`, 'info');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hw.spotOccupied, hw.active, hardwareSpotId]);
+  }, [hw.spotOccupied, hwControls, hardwareSpotId]);
+
+  // After the real sensor moves on, wait for it to read "open" before it drives the new spot.
+  useEffect(() => {
+    if (!hwArmed && (!hw.active || !hw.spotOccupied)) setHwArmed(true);
+  }, [hwArmed, hw.active, hw.spotOccupied]);
+
+  // While the sensor is waiting to be moved, its spot is reserved: cars aren't routed there.
+  const lotForSearch = (l: LotModel): LotModel =>
+    hwActiveRef.current && !hwArmedRef.current
+      ? { ...l, spots: l.spots.map((s) => (s.id === hardwareSpotIdRef.current ? { ...s, occupied: true } : s)) }
+      : l;
+
+  // A car parked in the real spot: move the real sensor on to the next nearest free spot.
+  const advanceHardwareSpot = (fromSpotId: string) => {
+    if (hardwareSpotIdRef.current !== fromSpotId || !hwActiveRef.current) return;
+    const currentLot = lotRef.current;
+    const lotAfterParking: LotModel = {
+      ...currentLot,
+      spots: currentLot.spots.map((s) => (s.id === fromSpotId ? { ...s, occupied: true } : s)),
+    };
+    const next = findNearestFreeSpot(lotAfterParking, [currentLot.entrance.row, currentLot.entrance.col]);
+    if (!next) {
+      logActivity('🚫 No free spot left to move the real sensor to', 'warning');
+      return;
+    }
+    hardwareSpotIdRef.current = next.spot.id;
+    hwArmedRef.current = false;
+    hwControlsRef.current = false;
+    setHardwareSpotId(next.spot.id);
+    setHwArmed(false);
+    logActivity(`📡 Spot ${fromSpotId} is taken. Move the real sensor to Spot ${next.spot.id}`, 'info');
+  };
 
   // Hardware: a car newly reaching the D34 entrance sensor starts the same flow as the simulation.
   const entranceWasDetected = useRef(false);
@@ -226,11 +268,11 @@ function App() {
     if (userStatus !== 'searching') return;
     logActivity('🔍 Searching for the nearest spot…', 'info');
     const id = setTimeout(() => {
-      const currentLot = lotRef.current;
+      const currentLot = lotForSearch(lotRef.current);
       const entrance: GridPoint = [currentLot.entrance.row, currentLot.entrance.col];
       // Test option: send the car to the real-sensor spot (when it's free) so the hardware gets exercised.
       const realSpot =
-        hwActiveRef.current && preferRealSpotRef.current
+        hwControlsRef.current && preferRealSpotRef.current
           ? currentLot.spots.find((s) => s.id === hardwareSpotIdRef.current)
           : undefined;
       const toRealSpot = realSpot && !realSpot.occupied ? buildRouteToSpot(currentLot, entrance, realSpot) : null;
@@ -307,13 +349,13 @@ function App() {
         const t = Math.min((now - userRouteStartRef.current) / MS_PER_CELL, maxT);
         const targetSpot = lotRef.current.spots.find((s) => s.id === route.spot.id);
         // Heading for the real spot: the car waits at its entrance until the D35 sensor sees a car park there.
-        const waitsForSensor = hwActiveRef.current && route.spot.id === hardwareSpotIdRef.current;
+        const waitsForSensor = hwControlsRef.current && route.spot.id === hardwareSpotIdRef.current;
         const sensorConfirmedParked = waitsForSensor && hwSpotOccupiedRef.current;
 
         if (!waitsForSensor && targetSpot?.occupied && t < maxT - 0.02) {
           const idx = Math.min(Math.round(t), maxT);
           const currentCell = route.path[idx];
-          const alt = findNearestFreeSpot(lotRef.current, currentCell);
+          const alt = findNearestFreeSpot(lotForSearch(lotRef.current), currentCell);
           if (alt) {
             userRouteRef.current = alt;
             userRouteStartRef.current = now;
@@ -346,6 +388,7 @@ function App() {
             spots: prev.spots.map((s) => (s.id === spotId ? { ...s, occupied: true } : s)),
           }));
           addPing(route.spot.row, route.spot.col);
+          if (sensorConfirmedParked) setTimeout(() => advanceHardwareSpot(spotId), HARDWARE_ADVANCE_DELAY_MS);
           setUserStatus('arrived');
           logActivity(
             sensorConfirmedParked ? `✅ Spot sensor confirmed. Parked at Spot ${spotId}` : `✅ Parked at Spot ${spotId}`,
@@ -403,7 +446,7 @@ function App() {
 
   // While heading for the real spot the car stops one cell short, until the D35 sensor confirms a real car parked.
   const holdingForSensor =
-    hw.active && userStatus === 'navigating' && userRoute?.spot.id === hardwareSpotId;
+    hwControls && userStatus === 'navigating' && userRoute?.spot.id === hardwareSpotId;
   const maxUserT = userRoute ? userRoute.path.length - 1 : 0;
   const userT =
     userRoute && userRouteStart !== null
@@ -468,7 +511,7 @@ function App() {
               targetSpotId={userRoute?.spot.id ?? null}
               pings={pingVisuals}
               hardwareSpotId={hardwareSpotId}
-              hardwareActive={hw.active}
+              hardwareActive={hwControls}
               onMoveHardware={moveHardwareSpot}
               interactive={interactive}
               onToggleSpot={toggleSpot}
@@ -499,6 +542,7 @@ function App() {
           <HardwarePanel
             hw={hw}
             spotId={hardwareSpotId}
+            waitingToRearm={hw.active && !hwArmed}
             preferRealSpot={preferRealSpot}
             onPreferRealSpot={setPreferRealSpot}
           />
