@@ -85,6 +85,8 @@ function App() {
   const hardwareSpotIdRef = useRef(hardwareSpotId);
   const preferRealSpotRef = useRef(preferRealSpot);
   const hwArmedRef = useRef(hwArmed);
+  // Spots where a car really parked (confirmed by the sensor). The simulation must never free these.
+  const realParkedRef = useRef<Set<string>>(new Set());
   const hwControlsRef = useRef(hwControls);
   const hwSpotOccupiedRef = useRef(hw.spotOccupied);
   const lotRef = useRef(lot);
@@ -146,6 +148,7 @@ function App() {
       return;
     }
     const willBeOccupied = !spot.occupied;
+    if (!willBeOccupied) realParkedRef.current.delete(id);
     setLot((prev) => ({
       ...prev,
       spots: prev.spots.map((s) => (s.id === id ? { ...s, occupied: willBeOccupied } : s)),
@@ -159,9 +162,9 @@ function App() {
     if (!interactive || id === hardwareSpotId) return;
     const previous = hardwareSpotId;
     setHardwareSpotId(id);
-    setHwArmed(true);
-    if (hw.active) {
-      // The real car now sits at the new spot, so the old one goes back to being a free simulated spot.
+    // If a car is still in front of the sensor it already parked at the old spot, so wait for it to clear.
+    setHwArmed(!(hw.active && hw.spotOccupied));
+    if (hw.active && !realParkedRef.current.has(previous)) {
       setLot((prev) => ({
         ...prev,
         spots: prev.spots.map((s) => (s.id === previous ? { ...s, occupied: false } : s)),
@@ -196,7 +199,19 @@ function App() {
   useEffect(() => {
     if (!hwControls) return;
     const spot = lotRef.current.spots.find((s) => s.id === hardwareSpotId);
-    if (!spot || spot.occupied === hw.spotOccupied) return;
+    if (!spot) return;
+    if (hw.spotOccupied) {
+      realParkedRef.current.add(hardwareSpotId);
+      // A car just sat in the real spot. If one of our trips is heading here, its arrival moves the sensor on.
+      const tripHeadingHere = userStatusRef.current === 'navigating' && userRouteRef.current?.spot.id === hardwareSpotId;
+      if (!tripHeadingHere) {
+        const from = hardwareSpotId;
+        setTimeout(() => advanceHardwareSpot(from), HARDWARE_ADVANCE_DELAY_MS);
+      }
+    } else {
+      realParkedRef.current.delete(hardwareSpotId);
+    }
+    if (spot.occupied === hw.spotOccupied) return;
     setLot((prev) => ({
       ...prev,
       spots: prev.spots.map((s) => (s.id === hardwareSpotId ? { ...s, occupied: hw.spotOccupied } : s)),
@@ -225,7 +240,22 @@ function App() {
       ...currentLot,
       spots: currentLot.spots.map((s) => (s.id === fromSpotId ? { ...s, occupied: true } : s)),
     };
-    const next = findNearestFreeSpot(lotAfterParking, [currentLot.entrance.row, currentLot.entrance.col]);
+    // Nearest by drive distance; if several tie, take the one closest to the spot that was just filled
+    // (so the sensor walks along the row: S25, S26, S27, ...).
+    const entrance: GridPoint = [currentLot.entrance.row, currentLot.entrance.col];
+    const from = lotAfterParking.spots.find((s) => s.id === fromSpotId);
+    let next: RouteResult | null = null;
+    let nextGap = Infinity;
+    for (const candidate of lotAfterParking.spots) {
+      if (candidate.occupied) continue;
+      const route = buildRouteToSpot(lotAfterParking, entrance, candidate);
+      if (!route) continue;
+      const gap = from ? Math.abs(candidate.row - from.row) + Math.abs(candidate.col - from.col) : 0;
+      if (!next || route.path.length < next.path.length || (route.path.length === next.path.length && gap < nextGap)) {
+        next = route;
+        nextGap = gap;
+      }
+    }
     if (!next) {
       logActivity('🚫 No free spot left to move the real sensor to', 'warning');
       return;
@@ -301,6 +331,7 @@ function App() {
       const simulated = currentLot.spots.filter((s) => !(hwActiveRef.current && s.id === hardwareSpotIdRef.current));
       const free = simulated.filter((s) => !s.occupied);
       const occupied = simulated.filter((s) => s.occupied);
+      const leavers = occupied.filter((s) => !realParkedRef.current.has(s.id));
       const occupancy = currentLot.spots.length === 0 ? 0 : occupied.length / currentLot.spots.length;
       const arrivalProb = Math.max(0.15, Math.min(0.85, 0.75 - occupancy * 0.5));
 
@@ -320,8 +351,8 @@ function App() {
           setClock(startTime);
           logActivity(`🚗 Another car is heading to Spot ${target.id}`, 'ambient');
         }
-      } else if (occupied.length > 0) {
-        const spot = occupied[Math.floor(Math.random() * occupied.length)];
+      } else if (leavers.length > 0) {
+        const spot = leavers[Math.floor(Math.random() * leavers.length)];
         setLot((prev) => ({
           ...prev,
           spots: prev.spots.map((s) => (s.id === spot.id ? { ...s, occupied: false } : s)),
@@ -388,7 +419,10 @@ function App() {
             spots: prev.spots.map((s) => (s.id === spotId ? { ...s, occupied: true } : s)),
           }));
           addPing(route.spot.row, route.spot.col);
-          if (sensorConfirmedParked) setTimeout(() => advanceHardwareSpot(spotId), HARDWARE_ADVANCE_DELAY_MS);
+          if (sensorConfirmedParked) {
+            realParkedRef.current.add(spotId);
+            setTimeout(() => advanceHardwareSpot(spotId), HARDWARE_ADVANCE_DELAY_MS);
+          }
           setUserStatus('arrived');
           logActivity(
             sensorConfirmedParked ? `✅ Spot sensor confirmed. Parked at Spot ${spotId}` : `✅ Parked at Spot ${spotId}`,

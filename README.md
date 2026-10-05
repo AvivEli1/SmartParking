@@ -96,6 +96,11 @@ the Hardware panel says to move the real sensor and clear it: the new spot start
 sensor again once it reads "open", so a car still sitting at the sensor can't instantly fill the
 next spot. In the meantime the waiting spot is reserved and no cars are routed to it.
 
+**A car that parked at the real spot stays there.** Live Traffic's random departures and the
+sensor moving on never free it again (only clicking that spot yourself does). "Next nearest" means
+nearest by drive distance from the entrance; if two spots tie, the one closest to the spot that was
+just filled wins, so the sensor walks along the row.
+
 **Choosing the spot yourself.** To test somewhere else, **drag the HW tag onto any
 other spot** (you can do this before connecting the board too). The Hardware panel and the
 sensor feed follow it. Moving it by hand is only possible between trips, not while a car is navigating, and the old spot goes back to a normal free spot.
