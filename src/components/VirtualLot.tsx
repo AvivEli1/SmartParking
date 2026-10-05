@@ -42,7 +42,9 @@ interface VirtualLotProps {
   progress: number;
   targetSpotId: string | null;
   pings: PingVisual[];
-  hardwareSpotId: string | null;
+  hardwareSpotId: string;
+  hardwareActive: boolean;
+  onMoveHardware: (spotId: string) => void;
   interactive: boolean;
   onToggleSpot: (spotId: string) => void;
 }
@@ -94,6 +96,38 @@ function facingAngle(lot: LotModel, row: number, col: number): number {
   return 90;
 }
 
+const TAG_W = 28;
+const TAG_H = 15;
+
+/** Where the draggable "HW" tag sits on a spot (canvas coordinates). */
+function tagRect(spotX: number, spotY: number) {
+  return { x: spotX + CELL - TAG_W - 3, y: spotY + 2, w: TAG_W, h: TAG_H };
+}
+
+function drawHwTag(ctx: CanvasRenderingContext2D, x: number, y: number, active: boolean, lifted: boolean) {
+  ctx.save();
+  if (lifted) {
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 3;
+  }
+  roundRect(ctx, x, y, TAG_W, TAG_H, TAG_H / 2);
+  ctx.fillStyle = active || lifted ? COLORS.route : '#ffffff';
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  if (!active && !lifted) {
+    ctx.strokeStyle = COLORS.route;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  ctx.font = '700 9px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif';
+  ctx.fillStyle = active || lifted ? '#ffffff' : COLORS.route;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('HW', x + TAG_W / 2, y + TAG_H / 2 + 0.5);
+  ctx.restore();
+}
+
 export default function VirtualLot({
   lot,
   car,
@@ -103,11 +137,16 @@ export default function VirtualLot({
   targetSpotId,
   pings,
   hardwareSpotId,
+  hardwareActive,
+  onMoveHardware,
   interactive,
   onToggleSpot,
 }: VirtualLotProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [hoverSpot, setHoverSpot] = useState<string | null>(null);
+  const [hoverTag, setHoverTag] = useState(false);
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+  const suppressClickRef = useRef(false);
 
   const width = lot.cols * CELL + PAD * 2;
   const height = lot.rows * CELL + PAD * 2;
@@ -203,14 +242,8 @@ export default function VirtualLot({
       }
 
       if (spot.id === hardwareSpotId) {
-        ctx.fillStyle = COLORS.route;
-        roundRect(ctx, x + CELL - 24, y + 1, 21, 12, 6);
-        ctx.fill();
-        ctx.font = '700 8px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif';
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('HW', x + CELL - 13.5, y + 7.5);
+        const tag = tagRect(x, y);
+        drawHwTag(ctx, tag.x, tag.y, hardwareActive, false);
       }
     }
 
@@ -271,6 +304,23 @@ export default function VirtualLot({
       ctx.restore();
     }
 
+    // Dragging the HW tag: highlight the spot it would land on and show the tag under the cursor.
+    if (dragPos) {
+      const col = Math.floor((dragPos.x - PAD) / CELL);
+      const row = Math.floor((dragPos.y - PAD) / CELL);
+      const target = lot.cells[row]?.[col];
+      if (target?.type === 'spot') {
+        ctx.save();
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = COLORS.route;
+        ctx.lineWidth = 2.5;
+        roundRect(ctx, PAD + col * CELL + 3, PAD + row * CELL + 3, CELL - 6, CELL - 6, 11);
+        ctx.stroke();
+        ctx.restore();
+      }
+      drawHwTag(ctx, dragPos.x - TAG_W / 2, dragPos.y - TAG_H / 2, true, true);
+    }
+
     // Sensor ping ripples
     for (const p of pings) {
       const radius = Math.max(0, 8 + p.age * 26);
@@ -283,35 +333,77 @@ export default function VirtualLot({
       ctx.stroke();
       ctx.restore();
     }
-  }, [lot, car, ambientCars, path, progress, targetSpotId, pings, hardwareSpotId, hoverSpot, interactive, width, height]);
+  }, [lot, car, ambientCars, path, progress, targetSpotId, pings, hardwareSpotId, hardwareActive, dragPos, hoverSpot, interactive, width, height]);
 
-  const cellFromEvent = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const pointFromEvent = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left - PAD;
-    const y = e.clientY - rect.top - PAD;
-    const col = Math.floor(x / CELL);
-    const row = Math.floor(y / CELL);
-    return lot.cells[row]?.[col];
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  const cellAt = (x: number, y: number) => lot.cells[Math.floor((y - PAD) / CELL)]?.[Math.floor((x - PAD) / CELL)];
+
+  const isOverHwTag = (x: number, y: number) => {
+    const spot = lot.spots.find((s) => s.id === hardwareSpotId);
+    if (!spot) return false;
+    const tag = tagRect(PAD + spot.col * CELL, PAD + spot.row * CELL);
+    const slop = 3;
+    return x >= tag.x - slop && x <= tag.x + tag.w + slop && y >= tag.y - slop && y <= tag.y + tag.h + slop;
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!interactive) return;
+    const pt = pointFromEvent(e);
+    if (!isOverHwTag(pt.x, pt.y)) return;
+    e.preventDefault();
+    suppressClickRef.current = true;
+    setDragPos(pt);
+  };
+
+  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (dragPos) {
+      const pt = pointFromEvent(e);
+      const cell = cellAt(pt.x, pt.y);
+      if (cell?.type === 'spot' && cell.spotId) onMoveHardware(cell.spotId);
+      setDragPos(null);
+    }
+    // The click that follows a mouse-up must not also toggle the spot underneath.
+    setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
   };
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!interactive) return;
-    const cell = cellFromEvent(e);
+    if (!interactive || suppressClickRef.current) return;
+    const pt = pointFromEvent(e);
+    const cell = cellAt(pt.x, pt.y);
     if (cell?.type === 'spot' && cell.spotId) onToggleSpot(cell.spotId);
   };
 
   const handleMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const cell = cellFromEvent(e);
+    const pt = pointFromEvent(e);
+    if (dragPos) setDragPos(pt);
+    const cell = cellAt(pt.x, pt.y);
     setHoverSpot(cell?.type === 'spot' ? (cell.spotId ?? null) : null);
+    setHoverTag(interactive && isOverHwTag(pt.x, pt.y));
   };
+
+  const handleLeave = () => {
+    setHoverSpot(null);
+    setHoverTag(false);
+    setDragPos(null);
+  };
+
+  const cursor = dragPos ? 'grabbing' : hoverTag ? 'grab' : interactive && hoverSpot ? 'pointer' : 'default';
 
   return (
     <canvas
       ref={canvasRef}
       onClick={handleClick}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
       onMouseMove={handleMove}
-      onMouseLeave={() => setHoverSpot(null)}
-      style={{ cursor: interactive && hoverSpot ? 'pointer' : 'default', display: 'block' }}
+      onMouseLeave={handleLeave}
+      style={{ cursor, display: 'block' }}
     />
   );
 }

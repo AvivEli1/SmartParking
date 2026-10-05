@@ -79,9 +79,23 @@ app does the detecting, routing and turn-by-turn directions.
 | Sensor | Pin | What it does in the app |
 | --- | --- | --- |
 | Entrance IR sensor | **D34** | A car in front of it = "car detected" -> finds a spot and starts the directions |
-| Spot IR sensor | **D35** | Tells the app whether **Spot S25** (the spot closest to the entrance) is taken |
+| Spot IR sensor | **D35** | Tells the app whether the **hardware spot** is taken (Spot S25 to start with, see below) |
+| LED strip (WS2812 / NeoPixel) | **D26** -> `DIN` | **Green = the hardware spot is open, red = taken.** Wire: red wire -> `5V`/`VIN`, yellow wire -> `DIN` (through a ~330 ohm resistor), blue wire -> `GND`. Use the strip's *input* end (`+5V DIN GND`), not the `DO` end |
+
+The LEDs are driven by the board itself, so the spot shows open/taken even when the app isn't
+connected. The sketch needs the **Adafruit NeoPixel** library (Arduino IDE -> Sketch -> Include
+Library -> Manage Libraries). If green and red come out swapped, change `NEO_GRB` to `NEO_RGB`
+in the sketch.
 
 All the other spots stay simulated, so you get a full lot with one real spot.
+
+**Choosing which spot is the real one.** The blue **HW** tag on the lot marks the hardware spot.
+It starts on S25 (closest to the entrance). To test somewhere else, **drag the HW tag onto any
+other spot** (you can do this before connecting the board too). The Hardware panel and the
+sensor feed follow it. Moving it is only possible between trips, not while a car is navigating.
+The "Send cars to Spot X" checkbox in the Hardware panel is test mode: while it's on, new cars
+head for the real spot whenever it's free, so you exercise the sensor even when that spot is
+far from the entrance. Turn it off to see normal nearest-spot routing.
 
 **1. Flash the board.** Open `hardware/smart_parking/smart_parking.ino` in the Arduino IDE,
 select your ESP32 board and port, and upload. It streams a line like
@@ -94,10 +108,10 @@ deployed (https) site, since the browser talks to the board directly. There's no
 
 **3. Try it.**
 1. Put something (like a toy car) in front of the **entrance sensor**. The phone shows "CAR DETECTED",
-   searches, then gives directions to Spot S25 and the virtual car drives up to it.
-2. The virtual car stops at the spot and waits ("Pull into Spot S25..."). Move the toy car to the
+   searches, then gives directions to the real spot and the virtual car drives up to it.
+2. The virtual car stops at the spot and waits ("Pull into Spot ..."). Move the toy car to the
    **spot sensor**: the app sees the spot become TAKEN and confirms you've parked.
-3. Bring a second car to the entrance while S25 is taken: it's routed to the next nearest spot.
+3. Bring a second car to the entrance while the real spot is taken: it's routed to the next nearest spot.
 
 The Hardware panel shows both live distances with their trigger points. If your sensors
 trigger too early or too late, drag the **trigger** sliders. No re-flashing needed (default 15 cm).

@@ -227,3 +227,7 @@
   margin-bottom: 10px;
   font-weight: 500;
 }
+
+.hw__note--tight {
+  margin-top: -8px;
+}

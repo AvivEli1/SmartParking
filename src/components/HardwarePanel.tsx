@@ -6,6 +6,8 @@ const MAX_CM = 80;
 interface HardwarePanelProps {
   hw: Hardware;
   spotId: string;
+  preferRealSpot: boolean;
+  onPreferRealSpot: (value: boolean) => void;
 }
 
 function SensorRow({
@@ -46,7 +48,7 @@ function SensorRow({
   );
 }
 
-export default function HardwarePanel({ hw, spotId }: HardwarePanelProps) {
+export default function HardwarePanel({ hw, spotId, preferRealSpot, onPreferRealSpot }: HardwarePanelProps) {
   const { serial, emulator } = hw;
   const connected = serial.status === 'connected';
   const busy = serial.status === 'connecting';
@@ -98,6 +100,18 @@ export default function HardwarePanel({ hw, spotId }: HardwarePanelProps) {
               detectedText="TAKEN"
               clearText="open"
             />
+            <label className="hw__switch-row">
+              <span>Send cars to Spot {spotId}</span>
+              <input
+                type="checkbox"
+                checked={preferRealSpot}
+                onChange={(e) => onPreferRealSpot(e.target.checked)}
+                aria-label={`Send cars to the real spot ${spotId}`}
+              />
+            </label>
+            <p className="hw__note hw__note--tight">
+              Test mode: new cars head for the real spot while it's free. Drag the HW tag on the lot to move it.
+            </p>
             <div className="hw__tuning">
               <label>
                 Entrance trigger
