@@ -60,8 +60,53 @@ src/
     PhoneApp.tsx           # the phone mockup UI
     ActivityFeed.tsx        # live sensor/event log
     StatsHeader.tsx          # header bar: occupancy ring + Live Traffic toggle
+    HardwarePanel.tsx        # Connect Arduino button, live sensor readings, sensor emulator
+  hardware/              # talking to the real board (Web Serial) + sensor logic
+    useSerialSensors.ts    # USB serial connection
+    useHardware.ts          # real board or emulator -> "car at entrance" / "spot taken"
+    sensorLogic.ts           # line parser + debounce/hysteresis
   App.tsx                # top-level state + the animation loop that drives everything
+hardware/
+  smart_parking/
+    smart_parking.ino    # ESP32 sketch: reads the two IR sensors, streams distances over USB
 ```
+
+## Using the real hardware (ESP32 + 2 IR sensors)
+
+The web app can run the simulation from real sensors. The board only *measures*; the web
+app does the detecting, routing and turn-by-turn directions.
+
+| Sensor | Pin | What it does in the app |
+| --- | --- | --- |
+| Entrance IR sensor | **D34** | A car in front of it = "car detected" -> finds a spot and starts the directions |
+| Spot IR sensor | **D35** | Tells the app whether **Spot S25** (the spot closest to the entrance) is taken |
+
+All the other spots stay simulated, so you get a full lot with one real spot.
+
+**1. Flash the board.** Open `hardware/smart_parking/smart_parking.ino` in the Arduino IDE,
+select your ESP32 board and port, and upload. It streams a line like
+`{"entrance":12.3,"spot":80.0}` over USB serial at 115200 baud, about 5 times a second.
+
+**2. Connect it to the app.** Close the Arduino IDE **Serial Monitor** (only one program can use
+the port at a time), open the app in **Chrome or Edge** (Safari and Firefox don't support USB
+serial), click **Connect Arduino**, and pick your board's port. This also works on the
+deployed (https) site, since the browser talks to the board directly. There's no server.
+
+**3. Try it.**
+1. Put something (like a toy car) in front of the **entrance sensor**. The phone shows "CAR DETECTED",
+   searches, then gives directions to Spot S25 and the virtual car drives up to it.
+2. The virtual car stops at the spot and waits ("Pull into Spot S25..."). Move the toy car to the
+   **spot sensor**: the app sees the spot become TAKEN and confirms you've parked.
+3. Bring a second car to the entrance while S25 is taken: it's routed to the next nearest spot.
+
+The Hardware panel shows both live distances with their trigger points. If your sensors
+trigger too early or too late, drag the **trigger** sliders. No re-flashing needed (default 15 cm).
+
+**No board handy?** Open "No board? Emulate the sensors" in the Hardware panel. The emulator
+streams the same kind of data, and you slide the two distances to put a "car" in front of each sensor.
+
+**Sensor notes:** the sketch converts the analog voltage to centimetres with the lab formula
+`d = 29.988 * V^(-1.173)` (readings below 0.4 V count as "far", 80 cm).
 
 ## Working on this as a team
 
@@ -75,5 +120,6 @@ src/
 
 This repo is only the software simulation. The plan is for it to eventually plug into
 the real hardware (entrance sensor + per-spot sensors) by swapping the simulated sensor
-events in `App.tsx` for real ones over MQTT/HTTP, without changing the lot logic,
-rendering, or phone UI underneath.
+events for real ones over MQTT/HTTP, without changing the lot logic, rendering, or phone UI
+underneath. The USB hardware connection above is the first step: the app already runs off a
+stream of sensor readings, whichever source they come from.

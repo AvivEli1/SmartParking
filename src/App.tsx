@@ -4,6 +4,8 @@ import VirtualLot, { type CarVisual, type PingVisual } from './components/Virtua
 import PhoneApp, { type NavStatus } from './components/PhoneApp';
 import ActivityFeed, { type ActivityEntry } from './components/ActivityFeed';
 import StatsHeader from './components/StatsHeader';
+import HardwarePanel from './components/HardwarePanel';
+import { useHardware } from './hardware/useHardware';
 import { generateLot } from './lot/generateLot';
 import { findNearestFreeSpot, buildRouteToSpot, type RouteResult } from './lot/pathfinding';
 import { buildDirections } from './lot/directions';
@@ -17,6 +19,8 @@ const PING_MS = 700;
 const AMBIENT_SPAWN_MS = 3200;
 const MAX_AMBIENT_CARS = 3;
 const REROUTE_STEAL_CHANCE = 0.55;
+// The one spot driven by the real D35 sensor. S25 is the closest spot to the entrance.
+const HARDWARE_SPOT_ID = 'S25';
 
 interface AmbientCar {
   id: string;
@@ -68,7 +72,10 @@ function App() {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [liveTraffic, setLiveTraffic] = useState(false);
   const [clock, setClock] = useState(() => performance.now());
+  const hw = useHardware();
 
+  const hwActiveRef = useRef(hw.active);
+  const hwSpotOccupiedRef = useRef(hw.spotOccupied);
   const lotRef = useRef(lot);
   const userStatusRef = useRef(userStatus);
   const userRouteRef = useRef(userRoute);
@@ -95,6 +102,10 @@ function App() {
   useEffect(() => {
     pingsRef.current = pings;
   }, [pings]);
+  useEffect(() => {
+    hwActiveRef.current = hw.active;
+    hwSpotOccupiedRef.current = hw.spotOccupied;
+  }, [hw.active, hw.spotOccupied]);
 
   const nextId = (prefix: string) => `${prefix}${idCounter.current++}`;
 
@@ -115,6 +126,10 @@ function App() {
     if (!interactive) return;
     const spot = lot.spots.find((s) => s.id === id);
     if (!spot) return;
+    if (hw.active && id === HARDWARE_SPOT_ID) {
+      logActivity(`📡 Spot ${id} is driven by the real D35 sensor. Move something in front of it.`, 'info');
+      return;
+    }
     const willBeOccupied = !spot.occupied;
     setLot((prev) => ({
       ...prev,
@@ -124,18 +139,59 @@ function App() {
     logActivity(`🔧 Spot ${id} sensor → ${willBeOccupied ? 'OCCUPIED' : 'FREE'}`, 'info');
   };
 
-  const handleFindSpot = () => {
-    if (userStatus !== 'idle' || freeCount === 0) return;
-    setUserStatus('detecting');
-    logActivity('🚦 Entrance sensor triggered — car detected', 'info');
-  };
-
   const handleReset = () => {
     setUserRoute(null);
     setUserRouteStart(null);
     setUserStatus('idle');
     setRerouteNotice(null);
   };
+
+  const handleFindSpot = (fromHardware = false) => {
+    // A real car showing up clears the previous "You've arrived" screen by itself.
+    if (fromHardware && userStatus === 'arrived') handleReset();
+    else if (userStatus !== 'idle') return;
+    if (freeCount === 0) {
+      if (fromHardware) logActivity('🚫 Car at the entrance but the lot is full', 'warning');
+      return;
+    }
+    setUserStatus('detecting');
+    logActivity(
+      fromHardware ? '📡 Entrance sensor D34 → car detected' : '🚦 Entrance sensor triggered — car detected',
+      'info',
+    );
+  };
+
+  // Hardware: the real D35 sensor decides whether the hardware spot is taken.
+  useEffect(() => {
+    if (!hw.active) return;
+    const spot = lotRef.current.spots.find((s) => s.id === HARDWARE_SPOT_ID);
+    if (!spot || spot.occupied === hw.spotOccupied) return;
+    setLot((prev) => ({
+      ...prev,
+      spots: prev.spots.map((s) => (s.id === HARDWARE_SPOT_ID ? { ...s, occupied: hw.spotOccupied } : s)),
+    }));
+    addPing(spot.row, spot.col);
+    logActivity(`📡 Spot sensor D35 → Spot ${HARDWARE_SPOT_ID} ${hw.spotOccupied ? 'OCCUPIED' : 'FREE'}`, 'info');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hw.spotOccupied, hw.active]);
+
+  // Hardware: a car newly reaching the D34 entrance sensor starts the same flow as the simulation.
+  const entranceWasDetected = useRef(false);
+  useEffect(() => {
+    if (!hw.active) {
+      entranceWasDetected.current = false;
+      return;
+    }
+    if (hw.entranceDetected && !entranceWasDetected.current) handleFindSpot(true);
+    entranceWasDetected.current = hw.entranceDetected;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hw.entranceDetected, hw.active]);
+
+  useEffect(() => {
+    if (hw.serial.status === 'connected') logActivity('📡 Arduino connected over USB', 'success');
+    else if (hw.serial.status === 'error') logActivity('📡 Arduino connection lost', 'warning');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hw.serial.status]);
 
   // Stage 1: "CAR DETECTED"
   useEffect(() => {
@@ -170,8 +226,10 @@ function App() {
     if (!liveTraffic) return;
     const id = setInterval(() => {
       const currentLot = lotRef.current;
-      const free = currentLot.spots.filter((s) => !s.occupied);
-      const occupied = currentLot.spots.filter((s) => s.occupied);
+      // The hardware spot belongs to the real sensor, so simulated traffic leaves it alone.
+      const simulated = currentLot.spots.filter((s) => !(hwActiveRef.current && s.id === HARDWARE_SPOT_ID));
+      const free = simulated.filter((s) => !s.occupied);
+      const occupied = simulated.filter((s) => s.occupied);
       const occupancy = currentLot.spots.length === 0 ? 0 : occupied.length / currentLot.spots.length;
       const arrivalProb = Math.max(0.15, Math.min(0.85, 0.75 - occupancy * 0.5));
 
@@ -179,7 +237,7 @@ function App() {
         let target: Spot | undefined;
         const activeUserRoute = userRouteRef.current;
         if (userStatusRef.current === 'navigating' && activeUserRoute && Math.random() < REROUTE_STEAL_CHANCE) {
-          target = currentLot.spots.find((s) => s.id === activeUserRoute.spot.id && !s.occupied);
+          target = free.find((s) => s.id === activeUserRoute.spot.id);
         }
         if (!target) target = free[Math.floor(Math.random() * free.length)];
 
@@ -219,8 +277,11 @@ function App() {
         const maxT = route.path.length - 1;
         const t = Math.min((now - userRouteStartRef.current) / MS_PER_CELL, maxT);
         const targetSpot = lotRef.current.spots.find((s) => s.id === route.spot.id);
+        // Heading for the real spot: the car waits at its entrance until the D35 sensor sees a car park there.
+        const waitsForSensor = hwActiveRef.current && route.spot.id === HARDWARE_SPOT_ID;
+        const sensorConfirmedParked = waitsForSensor && hwSpotOccupiedRef.current;
 
-        if (targetSpot?.occupied && t < maxT - 0.02) {
+        if (!waitsForSensor && targetSpot?.occupied && t < maxT - 0.02) {
           const idx = Math.min(Math.round(t), maxT);
           const currentCell = route.path[idx];
           const alt = findNearestFreeSpot(lotRef.current, currentCell);
@@ -242,8 +303,14 @@ function App() {
             setUserRouteStart(null);
             logActivity('❌ Lot filled up before you could park', 'warning');
           }
-        } else if (t >= maxT) {
+        } else if (sensorConfirmedParked || (!waitsForSensor && t >= maxT)) {
           const spotId = route.spot.id;
+          if (sensorConfirmedParked) {
+            // Snap the virtual car into the spot the moment the real sensor sees the real car.
+            const snapStart = now - maxT * MS_PER_CELL;
+            userRouteStartRef.current = snapStart;
+            setUserRouteStart(snapStart);
+          }
           userStatusRef.current = 'arrived';
           setLot((prev) => ({
             ...prev,
@@ -251,7 +318,10 @@ function App() {
           }));
           addPing(route.spot.row, route.spot.col);
           setUserStatus('arrived');
-          logActivity(`✅ Parked at Spot ${spotId}`, 'success');
+          logActivity(
+            sensorConfirmedParked ? `✅ Spot sensor confirmed. Parked at Spot ${spotId}` : `✅ Parked at Spot ${spotId}`,
+            'success',
+          );
         }
         animating = true;
       }
@@ -302,10 +372,15 @@ function App() {
     return () => cancelAnimationFrame(raf);
   }, []);
 
+  // While heading for the real spot the car stops one cell short, until the D35 sensor confirms a real car parked.
+  const holdingForSensor =
+    hw.active && userStatus === 'navigating' && userRoute?.spot.id === HARDWARE_SPOT_ID;
+  const maxUserT = userRoute ? userRoute.path.length - 1 : 0;
   const userT =
     userRoute && userRouteStart !== null
-      ? Math.min((clock - userRouteStart) / MS_PER_CELL, userRoute.path.length - 1)
+      ? Math.max(0, Math.min((clock - userRouteStart) / MS_PER_CELL, holdingForSensor ? maxUserT - 1 : maxUserT))
       : 0;
+  const waitingForSensor = holdingForSensor && userT >= maxUserT - 1 - 0.001;
 
   const steps = userRoute ? buildDirections(userRoute.path, userRoute.spot.id) : [];
   let currentStepIndex = 0;
@@ -346,7 +421,9 @@ function App() {
             freeCount={freeCount}
             totalCount={lot.spots.length}
             rerouteNotice={rerouteNotice}
-            onFindSpot={handleFindSpot}
+            hardwareActive={hw.active}
+            waitingForSensor={waitingForSensor}
+            onFindSpot={() => handleFindSpot()}
             onReset={handleReset}
           />
         </section>
@@ -361,6 +438,7 @@ function App() {
               progress={userT}
               targetSpotId={userRoute?.spot.id ?? null}
               pings={pingVisuals}
+              hardwareSpotId={hw.active ? HARDWARE_SPOT_ID : null}
               interactive={interactive}
               onToggleSpot={toggleSpot}
             />
@@ -387,6 +465,7 @@ function App() {
         </section>
 
         <section className="app__col app__col--feed">
+          <HardwarePanel hw={hw} spotId={HARDWARE_SPOT_ID} />
           <ActivityFeed entries={activity} />
         </section>
       </main>

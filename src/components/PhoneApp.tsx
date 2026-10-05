@@ -11,6 +11,8 @@ interface PhoneAppProps {
   freeCount: number;
   totalCount: number;
   rerouteNotice: string | null;
+  hardwareActive: boolean;
+  waitingForSensor: boolean;
   onFindSpot: () => void;
   onReset: () => void;
 }
@@ -23,6 +25,8 @@ export default function PhoneApp({
   freeCount,
   totalCount,
   rerouteNotice,
+  hardwareActive,
+  waitingForSensor,
   onFindSpot,
   onReset,
 }: PhoneAppProps) {
@@ -45,6 +49,9 @@ export default function PhoneApp({
         {status === 'idle' && (
           <div className="phone__panel phone__panel--center">
             <div className="phone__pin">📍</div>
+            {hardwareActive && (
+              <p className="phone__hint">📡 Listening to the entrance sensor. Drive up to the lot entrance.</p>
+            )}
             <button className="phone__button" onClick={onFindSpot} disabled={freeCount === 0}>
               {freeCount === 0 ? 'Lot Full' : 'Simulate Car Arrival'}
             </button>
@@ -68,6 +75,9 @@ export default function PhoneApp({
         {status === 'navigating' && targetSpotId && (
           <div className="phone__panel">
             {rerouteNotice && <div className="phone__reroute">⚠️ {rerouteNotice}</div>}
+            {waitingForSensor && (
+              <div className="phone__waiting">📡 Pull into Spot {targetSpotId}. Waiting for the spot sensor to confirm.</div>
+            )}
             <div className="phone__target">
               <span className="phone__target-label">Heading to</span>
               <span className="phone__target-spot">Spot {targetSpotId}</span>

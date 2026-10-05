@@ -26,6 +26,7 @@
 
 .app__col--feed {
   padding-top: 2px;
+  gap: 16px;
 }
 
 .lot-card {

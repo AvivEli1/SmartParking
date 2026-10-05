@@ -42,6 +42,7 @@ interface VirtualLotProps {
   progress: number;
   targetSpotId: string | null;
   pings: PingVisual[];
+  hardwareSpotId: string | null;
   interactive: boolean;
   onToggleSpot: (spotId: string) => void;
 }
@@ -101,6 +102,7 @@ export default function VirtualLot({
   progress,
   targetSpotId,
   pings,
+  hardwareSpotId,
   interactive,
   onToggleSpot,
 }: VirtualLotProps) {
@@ -199,6 +201,17 @@ export default function VirtualLot({
         ctx.textBaseline = 'middle';
         ctx.fillText(spot.id, x + CELL / 2, y + CELL / 2);
       }
+
+      if (spot.id === hardwareSpotId) {
+        ctx.fillStyle = COLORS.route;
+        roundRect(ctx, x + CELL - 24, y + 1, 21, 12, 6);
+        ctx.fill();
+        ctx.font = '700 8px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('HW', x + CELL - 13.5, y + 7.5);
+      }
     }
 
     // Entrance marker
@@ -270,7 +283,7 @@ export default function VirtualLot({
       ctx.stroke();
       ctx.restore();
     }
-  }, [lot, car, ambientCars, path, progress, targetSpotId, pings, hoverSpot, interactive, width, height]);
+  }, [lot, car, ambientCars, path, progress, targetSpotId, pings, hardwareSpotId, hoverSpot, interactive, width, height]);
 
   const cellFromEvent = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
